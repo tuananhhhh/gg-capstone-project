@@ -1,0 +1,130 @@
+## Find the R Markdown notebook here https://www.kaggle.com/code/tuananhnguyen31/google-data-analytics-capstone-project/edit
+
+## Set up libraries
+install.packages('ggmap') # for ploting lat and lon on map
+library(tidyverse)        #transform and better present data
+library(lubridate)        #process date-time attributes
+library(ggplot2)          #visualize data
+library(scales)           #adding percentage
+library(gridExtra)        #graphs arrangement
+library(tidytext)         #for tidy format
+library(ggmap)            #for mapping in R
+library(hrbrthemes)       #for heatmap
+library(formattable)      #for cleaning format
+library(knitr)            #create new markdown document
+library(osmdata)          #map source
+
+# read csv path and store them in file_list
+file_list <-list.files(path = "/kaggle/input/cyclistic-project/", pattern = "*.csv")
+for(i in file_list){
+    filepath <- file.path("/kaggle/input/cyclistic-project",i)
+    print(i)
+    assign(paste('cyclistic_data_',substr(i,1,6),sep=''),read_csv(filepath))
+}
+
+# Have a look at the dataset
+head(cyclistic_data_202205)
+
+# another look at the dataset. I also want to check if the data were in the dataframe type or not.
+str(cyclistic_data_202205)
+class(cyclistic_data_202205)
+
+# make a list of all dataframes 
+data_name_list <- list(cyclistic_data_202205,cyclistic_data_202206,cyclistic_data_202207,cyclistic_data_202208,cyclistic_data_202209,cyclistic_data_202210,cyclistic_data_202211,cyclistic_data_202212,cyclistic_data_202301,cyclistic_data_202302,cyclistic_data_202303,cyclistic_data_202304)
+# use for loop function and colnames() to check if 12 dataframes all contain the same column names -> compare with column name of "cyclistic_data_202205"    
+for (i in 1:(length(data_name_list))){
+    print(colnames(data_name_list[[i]]) == colnames(data_name_list[[1]]))
+}
+
+# merging all 12 dataframs into 1 using rbind() 
+# check to see if all value have been merged into one dataframe by function nrow()
+cyclistic_df <- rbind(cyclistic_data_202205,cyclistic_data_202206,cyclistic_data_202207,cyclistic_data_202208,cyclistic_data_202209,cyclistic_data_202210,cyclistic_data_202211,cyclistic_data_202212,cyclistic_data_202301,cyclistic_data_202302,cyclistic_data_202303,cyclistic_data_202304)
+nrow(cyclistic_df) == sum(sapply(data_name_list, NROW))
+
+# remove dataframe to free space if needed
+# remove(cyclistic_data_202205,cyclistic_data_202206,cyclistic_data_202207,cyclistic_data_202208,cyclistic_data_202209,cyclistic_data_202210,cyclistic_data_202211,cyclistic_data_202212,cyclistic_data_202301,cyclistic_data_202302,cyclistic_data_202303,cyclistic_data_202304)
+
+# Missing values
+# Use summary() to see which variables have missing (NA) values
+summary(cyclistic_df)
+nrow(cyclistic_df)
+
+# Exclude rows that have missing data in ANY variable using na.omit() function
+cyclistic_df_no_NA <- na.omit(cyclistic_df)
+
+# Check if there were still n/a values left
+cyclistic_df_no_NA %>% summarise_all(~round(sum(is.na(cyclistic_df_no_NA))/nrow(cyclistic_df_no_NA)))
+
+# Remove duplicate row using distinct()
+cyclistic_df_no_NA_dup <- distinct(cyclistic_df_no_NA) 
+
+# remove the records with started_at > ended_at
+cyclistic_df_no_NA_dup <- cyclistic_df_no_NA_dup %>% filter(started_at <= ended_at)
+
+# Creat a data to modify 
+final_df <- cyclistic_df_no_NA_dup
+
+# Create a column called “ride_length”
+final_df$ride_length <- as.numeric(round(difftime(final_df$ended_at, final_df$started_at, units = "secs"),1))
+
+# Create day_of_week column
+final_df$day_of_week <- wday(final_df$started_at)
+
+# Create hour column
+final_df <- final_df %>% mutate(hour = hour(final_df$started_at))
+
+# get descriptive statistics on counts and duration_in_secs for CASUAL and MEMBER 
+by_user_type <- final_df %>% 
+                    group_by(member_casual) %>% 
+                    summarise(number_of_rides = n(), 
+                              "%_ride" = percent(n()/nrow(final_df)), 
+                              total_duration = sum(ride_length), 
+                              "%_duration" = percent(sum(ride_length)/sum(final_df$ride_length)), 
+                              average_duration = mean(ride_length), 
+                              minimum_duration = min(ride_length), 
+                              maximum_duration=max(ride_length), 
+                              std_duration = sd(ride_length))
+by_user_type
+
+# I found that there were some customers did not ride at all since min_ride = 0 secs
+final_df %>% 
+    filter(ride_length == 0) %>%
+    group_by(member_casual) %>%
+    summarise(total_count=n(),
+            .groups = 'drop')
+            
+# Station that were used the most as start station
+final_df %>% 
+    group_by(start_station_name) %>%
+    summarise(total_count=n(),.groups = 'drop') %>%
+    arrange(desc(total_count)) %>%
+    top_n(3)
+    
+# Type of bike
+final_df %>%
+  group_by(member_casual, rideable_type) %>% 
+  count(rideable_type)
+  
+#total rides 
+final_df %>%
+  group_by(rideable_type) %>% 
+  count(rideable_type)
+  
+#total rides by member type
+final_df %>%
+  group_by(member_casual) %>% 
+  count(day_of_week)
+  
+# Top day of the week had the most ride
+final_df %>% 
+    group_by(day_of_week) %>%
+    summarise(total_count=n(),.groups = 'drop') %>%
+    arrange(desc(total_count)) %>%
+    top_n(4)
+    
+# Top hour had the most ride
+final_df %>% 
+    group_by(hour) %>%
+    summarise(total_count=n(),.groups = 'drop') %>%
+    arrange(desc(total_count)) %>%
+    top_n(4)
